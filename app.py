@@ -6,6 +6,18 @@ from dotenv import load_dotenv
 from news_fetcher import get_news
 from summarizer import summarize
 from telegram_alerts import send_telegram_message
+from sentiment_logger import log_sentiment
+from sentiment_trends import plot_sentiment_trend
+
+def extract_sentiment_keyword(text: str) -> str:
+    """
+    Extract the primary sentiment keyword from the summary text.
+    """
+    lower = text.lower()
+    for kw in ('bullish', 'bearish', 'neutral'):
+        if kw in lower:
+            return kw
+    return 'unknown'
 
 # Load environment variables
 load_dotenv()
@@ -55,6 +67,9 @@ else:
                 parts = summary.split("Suggested action:", 1)
                 sentiment_text = parts[0].strip()
                 action_text = "Suggested action:" + parts[1].strip()
+            # Log only the sentiment keyword to CSV
+            sentiment_key = extract_sentiment_keyword(sentiment_text)
+            log_sentiment(selected_ticker, sentiment_key)
             combined_lines.append(f"🔹 *{title}*  ")
             combined_lines.append(f"🧠 {sentiment_text} {action_text}".strip())
             combined_lines.append("")  # blank line
@@ -63,6 +78,15 @@ else:
     if len(combined_lines) > 2:
         combined_message = "\n".join(combined_lines)
         send_telegram_message(combined_message)
+
+    # Sentiment Trend Plot
+    st.subheader("📈 Sentiment Trend")
+    if st.checkbox(f"Show sentiment trend for {selected_ticker}"):
+        fig = plot_sentiment_trend(log_path="sentiment_log.csv", ticker=selected_ticker)
+        if fig:
+            st.pyplot(fig)
+        else:
+            st.write("No sentiment data to display.")
 
 # Market Events Calendar
 st.subheader("📅 Upcoming Market Events")

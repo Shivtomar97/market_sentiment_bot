@@ -3,3 +3,5 @@ openai
 yfinance
 requests
 python-dotenv
+pandas
+matplotlib
