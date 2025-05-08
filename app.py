@@ -3,12 +3,13 @@ import yfinance as yf
 import json
 import os
 from dotenv import load_dotenv
-from news_fetcher import get_news
+from news_fetcher import get_news, get_rss_news
 from summarizer import summarize
 from telegram_alerts import send_telegram_message
 from sentiment_logger import log_sentiment
 from sentiment_trends import plot_sentiment_trend
 from datetime import datetime, date
+from processed_store import is_processed, mark_processed
 
 def extract_sentiment_keyword(text: str) -> str:
     """
@@ -37,63 +38,63 @@ ticker_data = yf.Ticker(selected_ticker)
 price = ticker_data.history(period="1d")["Close"].iloc[-1]
 st.metric(label=f"{selected_ticker} Current Price", value=f"${price:.2f}")
 
-# News Section
+# News Section (choose data source)
 st.subheader(f"🔎 News and Sentiment for {selected_ticker}")
-articles = get_news(selected_ticker)
+col1, col2 = st.columns(2)
+# Render both buttons and capture their clicks
+newsapi_clicked = col1.button("Fetch via NewsAPI")
+rss_clicked = col2.button("Fetch via RSS")
 
-if not articles:
-    st.write("No news articles found.")
+if newsapi_clicked:
+    articles = get_news(selected_ticker)
+    source = "NewsAPI"
+elif rss_clicked:
+    articles = get_rss_news(selected_ticker)
+    source = "RSS"
 else:
-    # Initialize combined Telegram message lines
-    combined_lines = [f"📰 ${selected_ticker}", ""]
-    for article in articles:
-        st.markdown(f"**{article['title']}**")
-        st.caption(f"{article['source']} • {article['publishedAt']}")
-        st.markdown(f"[Read more]({article['url']})")
+    articles = None
+    source = None
 
+if articles is None:
+    st.write("Select a source to fetch news.")
+elif not articles:
+    st.write(f"No articles found via {source}.")
+else:
+    combined_lines = [f"📰 ${selected_ticker} ({source})", ""]
+    for article in articles:
+        title = article.get("title", "No title")
+        url = article.get("url")
+        st.markdown(f"### {title}")
+        st.caption(f"{article.get('source','Unknown source')} • {article.get('publishedAt','')}")
+        if url:
+            st.markdown(f"[🔗 Read full article]({url})", unsafe_allow_html=True)
         description = article.get("description") or article.get("content") or "No summary available."
         summary = summarize(description, selected_ticker)
         st.success(summary)
-        # Collect for combined Telegram message
-        if not summary.startswith("Error summarizing"):
-            title = article.get("title", "No title")
-            # Parse sentiment and action
-            sentiment_text = summary
-            action_text = ""
-            if ";" in summary:
-                parts = [p.strip() for p in summary.split(";", 1)]
-                sentiment_text = parts[0]
-                action_text = parts[1]
-            elif "Suggested action:" in summary:
-                parts = summary.split("Suggested action:", 1)
-                sentiment_text = parts[0].strip()
-                action_text = "Suggested action:" + parts[1].strip()
-            # Only log if summary is non-empty and the article is from today
-            pub_date_str = article.get("publishedAt", "")
-            try:
-                pub_date = datetime.fromisoformat(pub_date_str.replace("Z", ""))
-                is_today = pub_date.date() == date.today()
-            except:
-                is_today = False
-            if summary.strip() and is_today:
-                sentiment_key = extract_sentiment_keyword(sentiment_text)
-                log_sentiment(selected_ticker, sentiment_key)
+        sentiment_key = extract_sentiment_keyword(summary)
+        pub_str = article.get("publishedAt", "")
+        try:
+            pub_date = datetime.fromisoformat(pub_str.replace("Z", ""))
+            log_sentiment(selected_ticker, sentiment_key, source, log_date=pub_date.date())
+        except Exception:
+            log_sentiment(selected_ticker, sentiment_key, source)
+        already = is_processed(url, source) if url else False
+        if url and not already:
             combined_lines.append(f"🔹 *{title}*  ")
-            combined_lines.append(f"🧠 {sentiment_text} {action_text}".strip())
-            combined_lines.append("")  # blank line
+            combined_lines.append(f"🧠 {sentiment_key}".strip())
+            combined_lines.append("")
+            mark_processed(url, source, process_date=pub_date.date())
 
-    # Send combined Telegram alert after processing all articles
     if len(combined_lines) > 2:
-        combined_message = "\n".join(combined_lines)
-        send_telegram_message(combined_message)
-
-    # Sentiment Trend Plot
+        send_telegram_message("\n".join(combined_lines))
+    # Sentiment Trend Plot (runs only after articles fetched and processed)
     st.subheader("📈 Sentiment Trend")
-    fig = plot_sentiment_trend(log_path="sentiment_log.csv", ticker=selected_ticker)
+    log_path = f"sentiment_log_{source.lower()}.csv"
+    fig = plot_sentiment_trend(log_path=log_path, ticker=selected_ticker)
     if fig:
         st.plotly_chart(fig, use_container_width=True)
     else:
-        st.write("No sentiment data to display.")
+        st.write(f"No sentiment data to display for {source}.")
 
 # Market Events Calendar
 st.subheader("📅 Upcoming Market Events")
