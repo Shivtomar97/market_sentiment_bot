@@ -5,24 +5,23 @@ from openai import OpenAI
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def summarize(text, ticker):
-    prompt = f"""
-You are a financial assistant. Based on this news about {ticker}, return exactly two lines:
-1. Sentiment: Bullish, Bearish, or Neutral — based on how the news is likely to affect the stock price.
-2. Suggested Action: A one-line investor recommendation (e.g., Buy, Hold, Monitor, Reduce Exposure, etc.)
-
-Format:
-Sentiment: <Bullish/Bearish/Neutral>.
-Suggested Action: <your sentence here>.
-
-News Article:
-\"\"\"
-{text}
-\"\"\"
-"""
+    prompt = (
+        f"You are analyzing a stock market news summary for the ticker {ticker}.\n"
+        "Your task is to classify the overall sentiment as one of the following:\n"
+        "- Bullish (if the article suggests a positive outlook or upside)\n"
+        "- Bearish (if it suggests risks, decline, or negative outcomes)\n"
+        "- Neutral (if no clear direction is implied or it's too speculative)\n\n"
+        "Avoid inferring sentiment unless there is clear evidence.\n"
+        "If the article is too vague or mixed, choose Neutral.\n\n"
+        "Respond in this exact format:\n"
+        "Sentiment: <Bullish | Bearish | Neutral>\n"
+        "Suggested Action: <a short recommendation to investors>\n\n"
+        f"News Summary:\n{text}"
+    )
 
     try:
         response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model="gpt-4",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.5
         )
