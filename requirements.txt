@@ -1,8 +1,8 @@
-streamlit
-openai
-yfinance
-requests
-python-dotenv
-pandas
-matplotlib
-plotly
+streamlit>=1.26.0
+pandas>=2.0.0
+plotly>=5.14.0
+openai>=1.0.0
+python-dotenv>=1.0.0
+requests>=2.28.0
+yfinance>=0.2.28
+feedparser>=6.0.10
