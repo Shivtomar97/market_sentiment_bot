@@ -2,6 +2,7 @@ import streamlit as st
 import yfinance as yf
 import json
 import os
+import csv
 from dotenv import load_dotenv
 from news_fetcher import get_news, get_rss_news
 from summarizer import summarize
@@ -29,9 +30,108 @@ def main():
     st.set_page_config(layout="wide")
     st.title("📈 Market Strategy Bot")
 
-    # Ticker selection
-    tickers = ["OKLO", "HOOD", "TSLA", "PLTR", "TEM"]
-    selected_ticker = st.selectbox("Select a Ticker", tickers)
+    # Create a container for logs at the top for debugging
+    log_container = st.empty()
+    def show_logs(title, logs):
+        """Display logs directly in the UI for debugging"""
+        with log_container.container():
+            st.subheader(f"Debug Logs: {title}")
+            st.json(logs)
+            st.divider()
+
+    # Debug info for ticker management (moved from sidebar)
+    ticker_debug = st.empty()
+
+    # Function to load tickers from CSV - simplified
+    def load_tickers():
+        default_tickers = ["OKLO", "HOOD", "TSLA", "PLTR", "TEM"]
+        ticker_file = "tickers.csv"
+        
+        # Create initial file if it doesn't exist
+        if not os.path.exists(ticker_file):
+            with open(ticker_file, 'w', newline='') as f:
+                writer = csv.writer(f)
+                for ticker in default_tickers:
+                    writer.writerow([ticker])
+            return default_tickers
+        
+        # Read existing tickers
+        try:
+            with open(ticker_file, 'r', newline='') as f:
+                reader = csv.reader(f)
+                tickers = [row[0] for row in reader if row and row[0]]
+            return tickers if tickers else default_tickers
+        except Exception as e:
+            st.error(f"Error loading tickers: {str(e)}")
+            return default_tickers
+
+    # Load tickers
+    tickers = load_tickers()
+    
+    # Main ticker selection in the main area with quick add button
+    st.subheader("📊 Ticker Selection")
+    # Use a more balanced column layout
+    left, right = st.columns([1, 1])
+    
+    # Left column for ticker selection
+    with left:
+        # Add label manually for consistent alignment with Add New Ticker
+        st.write("Select a Ticker:")
+        selected_ticker = st.selectbox("Select Ticker", tickers, label_visibility="collapsed")
+    
+    # Right column for adding new tickers with better alignment
+    with right:
+        # Add label manually to match the positioning of the selectbox label
+        st.write("Add New Ticker:")
+        # Create columns for the input and button on the same row
+        input_col, btn_col = st.columns([2, 1])
+        with input_col:
+            new_ticker = st.text_input("New Ticker", placeholder="AAPL", label_visibility="collapsed")
+        with btn_col:
+            add_btn = st.button("Add Ticker", type="primary", use_container_width=True)
+
+    # Handle the add ticker logic directly
+    if add_btn and new_ticker:
+        # Format and validate the ticker
+        new_ticker = new_ticker.strip().upper()
+        
+        # Basic validation
+        if not new_ticker:
+            st.error("Ticker cannot be empty")
+        elif not new_ticker.isalnum():
+            st.error(f"Invalid ticker format: {new_ticker}")
+        elif new_ticker in tickers:
+            st.error(f"Ticker {new_ticker} already in list")
+        else:
+            # Add the ticker directly
+            try:
+                # Add to the list
+                tickers.append(new_ticker)
+                
+                # Write all tickers to file
+                with open("tickers.csv", 'w', newline='') as f:
+                    writer = csv.writer(f)
+                    for ticker in tickers:
+                        writer.writerow([ticker])
+                
+                # Show success and details in expander
+                st.success(f"Added {new_ticker} successfully!")
+                
+                with st.expander("Debug Info"):
+                    st.write("Current tickers:", tickers)
+                    st.write("File path:", os.path.join(os.getcwd(), "tickers.csv"))
+                    st.write("File exists:", os.path.exists("tickers.csv"))
+                    
+                    with open("tickers.csv", 'r') as f:
+                        content = f.read()
+                        st.code(content)
+                
+                # Force reload
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Error adding ticker: {str(e)}")
+                st.write("Please check the ticker format and try again.")
 
     # Live Price Section
     st.subheader(f"📊 Live Stock Price for {selected_ticker}")
