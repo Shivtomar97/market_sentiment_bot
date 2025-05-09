@@ -2,7 +2,8 @@ import streamlit as st
 import yfinance as yf
 import json
 import os
-import csv
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 from dotenv import load_dotenv
 from news_fetcher import get_news, get_rss_news
 from summarizer import summarize
@@ -21,6 +22,59 @@ def extract_sentiment_keyword(text: str) -> str:
         if kw in lower:
             return kw
     return 'unknown'
+
+def get_gsheet_client():
+    credentials = {
+        "type": st.secrets["gspread"]["type"],
+        "project_id": st.secrets["gspread"]["project_id"],
+        "private_key_id": st.secrets["gspread"]["private_key_id"],
+        "private_key": st.secrets["gspread"]["private_key"].replace("\\n", "\n"),
+        "client_email": st.secrets["gspread"]["client_email"],
+        "client_id": st.secrets["gspread"]["client_id"],
+        "token_uri": st.secrets["gspread"]["token_uri"],
+    }
+    scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+    creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials, scope)
+    return gspread.authorize(creds)
+
+def load_tickers():
+    try:
+        gc = get_gsheet_client()
+        sheet_id = st.secrets["gspread"]["sheet_id"]
+        sheet = gc.open_by_key(sheet_id)
+        worksheet = sheet.sheet1
+        values = worksheet.col_values(1)
+        tickers = [t.upper().strip() for t in values[1:] if t.strip()]
+        return list(set(tickers))
+    except Exception as e:
+        st.error("Error loading tickers. Showing fallback tickers.")
+        return ["OKLO", "HOOD", "TSLA", "PLTR", "TEM"]
+
+
+
+
+def add_ticker(new_ticker):
+    if not new_ticker:
+        return False, "Ticker cannot be empty"
+    
+    new_ticker = new_ticker.strip().upper()
+    
+    # Basic validation
+    if not new_ticker.isalnum():
+        return False, f"Invalid ticker format: {new_ticker}"
+    
+    try:
+        gc = get_gsheet_client()
+        sheet = gc.open_by_key(st.secrets["gspread"]["sheet_id"]).sheet1
+        existing = load_tickers()
+        
+        if new_ticker in existing:
+            return False, f"Ticker {new_ticker} already in list"
+            
+        sheet.append_row([new_ticker])
+        return True, f"Added {new_ticker} successfully!"
+    except Exception as e:
+        return False, f"Error adding ticker: {str(e)}"
 
 def main():
     # Load environment variables
@@ -41,29 +95,6 @@ def main():
 
     # Debug info for ticker management (moved from sidebar)
     ticker_debug = st.empty()
-
-    # Function to load tickers from CSV - simplified
-    def load_tickers():
-        default_tickers = ["OKLO", "HOOD", "TSLA", "PLTR", "TEM"]
-        ticker_file = "tickers.csv"
-        
-        # Create initial file if it doesn't exist
-        if not os.path.exists(ticker_file):
-            with open(ticker_file, 'w', newline='') as f:
-                writer = csv.writer(f)
-                for ticker in default_tickers:
-                    writer.writerow([ticker])
-            return default_tickers
-        
-        # Read existing tickers
-        try:
-            with open(ticker_file, 'r', newline='') as f:
-                reader = csv.reader(f)
-                tickers = [row[0] for row in reader if row and row[0]]
-            return tickers if tickers else default_tickers
-        except Exception as e:
-            st.error(f"Error loading tickers: {str(e)}")
-            return default_tickers
 
     # Load tickers
     tickers = load_tickers()
@@ -92,46 +123,21 @@ def main():
 
     # Handle the add ticker logic directly
     if add_btn and new_ticker:
-        # Format and validate the ticker
-        new_ticker = new_ticker.strip().upper()
+        # Add the ticker using the Google Sheets function
+        success, message = add_ticker(new_ticker)
         
-        # Basic validation
-        if not new_ticker:
-            st.error("Ticker cannot be empty")
-        elif not new_ticker.isalnum():
-            st.error(f"Invalid ticker format: {new_ticker}")
-        elif new_ticker in tickers:
-            st.error(f"Ticker {new_ticker} already in list")
+        if success:
+            st.success(message)
+            # Show current tickers in an expander
+            with st.expander("Current Tickers"):
+                updated_tickers = load_tickers()
+                st.write(updated_tickers)
+            
+            # Force reload to update the dropdown
+            st.cache_data.clear()
+            st.rerun()
         else:
-            # Add the ticker directly
-            try:
-                # Add to the list
-                tickers.append(new_ticker)
-                
-                # Write all tickers to file
-                with open("tickers.csv", 'w', newline='') as f:
-                    writer = csv.writer(f)
-                    for ticker in tickers:
-                        writer.writerow([ticker])
-                
-                # Show success and details in expander
-                st.success(f"Added {new_ticker} successfully!")
-                
-                with st.expander("Debug Info"):
-                    st.write("Current tickers:", tickers)
-                    st.write("File path:", os.path.join(os.getcwd(), "tickers.csv"))
-                    st.write("File exists:", os.path.exists("tickers.csv"))
-                    
-                    with open("tickers.csv", 'r') as f:
-                        content = f.read()
-                        st.code(content)
-                
-                # Force reload
-                st.cache_data.clear()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Error adding ticker: {str(e)}")
-                st.write("Please check the ticker format and try again.")
+            st.error(message)
 
     # Live Price Section
     st.subheader(f"📊 Live Stock Price for {selected_ticker}")

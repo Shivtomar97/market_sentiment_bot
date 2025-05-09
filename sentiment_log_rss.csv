@@ -40,3 +40,5 @@ date,ticker,sentiment
 2025-05-09,TSLA,bullish
 2025-05-09,TSLA,neutral
 2025-05-09,market,neutral
+2025-05-09,HOOD,bullish
+2025-05-09,HOOD,bearish

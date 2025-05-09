@@ -9,3 +9,5 @@ build/
 *.egg-info/
 .idea/
 .vscode/ 
+.streamlit/secrets.toml
+glass-indexer-459318-u9-5cc908a1c78d.json
