@@ -124,3 +124,36 @@ def get_rss_news(ticker):
         })
     # Return only the first 10 relevant articles
     return articles[:10]
+
+import feedparser
+from datetime import datetime, timedelta
+
+import feedparser
+from datetime import datetime, timedelta
+
+def get_rss_general_news():
+    """
+    Fetch general stock market news from Yahoo Finance RSS (^GSPC) for the past 7 days.
+    """
+    url_feed = "https://feeds.finance.yahoo.com/rss/2.0/headline?s=%5EDJI&region=US&lang=en-US"
+    feed = feedparser.parse(url_feed)
+    articles = []
+    cutoff = datetime.utcnow() - timedelta(days=7)
+
+    for entry in feed.entries:
+        parsed = entry.get("published_parsed")
+        if not parsed:
+            continue
+        dt = datetime(*parsed[:6])
+        if dt < cutoff:
+            continue
+        desc = entry.get("summary") or entry.get("description") or ""
+        articles.append({
+            "title": entry.get("title"),
+            "url": entry.get("link"),
+            "description": desc,
+            "publishedAt": dt.isoformat(),
+            "source": "Yahoo Finance (^GSPC)"
+        })
+
+    return articles[:10]
